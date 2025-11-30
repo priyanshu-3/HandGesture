@@ -289,6 +289,13 @@ class HandGesture3DApp:
         cv2.putText(debug_frame, f"Hands: {results['num_hands']}", (10, info_y),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
+        # Draw instructions if no hands detected
+        if results['num_hands'] == 0:
+            h, w = debug_frame.shape[:2]
+            cv2.putText(debug_frame, "Show your hands to the camera!", 
+                       (w//2 - 200, h//2),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        
         # Two-hand gesture
         if results['two_hand_gesture'] is not None:
             info_y += 30
@@ -326,8 +333,13 @@ class HandGesture3DApp:
                     # Capture frame
                     ret, frame = self.cap.read()
                     if not ret:
-                        print("Failed to capture frame")
-                        break
+                        print("\nCamera error! Please check:")
+                        print("  - Camera is not being used by another app")
+                        print("  - Camera permissions are granted")
+                        print("  - Camera is properly connected")
+                        print("\nPress Q to quit or wait for reconnection...")
+                        time.sleep(0.5)
+                        continue
                     
                     # Flip frame horizontally for mirror effect
                     frame = cv2.flip(frame, 1)

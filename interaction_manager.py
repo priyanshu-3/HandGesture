@@ -95,7 +95,7 @@ class Object3D:
         
         glEnd()
     
-    def is_point_inside(self, point: np.ndarray, tolerance: float = 1.5) -> bool:
+    def is_point_inside(self, point: np.ndarray, tolerance: float = 3.0) -> bool:
         """Check if point is inside object (with tolerance)"""
         dist = np.linalg.norm(point - self.position)
         return dist < (self.size * tolerance)
@@ -133,10 +133,33 @@ class InteractionManager:
         
     def _create_initial_objects(self):
         """Create initial 3D objects in scene"""
-        # Create a few cubes
-        self.objects.append(Object3D(np.array([0.0, 0.0, 0.5]), 0.1, (1.0, 0.3, 0.3)))
-        self.objects.append(Object3D(np.array([0.2, 0.1, 0.6]), 0.08, (0.3, 1.0, 0.3)))
-        self.objects.append(Object3D(np.array([-0.2, -0.1, 0.55]), 0.12, (0.3, 0.3, 1.0)))
+        # Create a few cubes at hand-reachable positions
+        self.objects.append(Object3D(np.array([0.0, 0.0, 0.5]), 0.08, (1.0, 0.3, 0.3)))
+        self.objects.append(Object3D(np.array([0.15, 0.08, 0.5]), 0.06, (0.3, 1.0, 0.3)))
+        self.objects.append(Object3D(np.array([-0.15, -0.08, 0.5]), 0.07, (0.3, 0.3, 1.0)))
+    
+    def transform_hand_to_scene(self, hand_pos: np.ndarray) -> np.ndarray:
+        """
+        Transform hand position from camera space to scene space
+        
+        Camera space: X right, Y down, Z forward (meters)
+        Scene space: X right, Y up, Z forward
+        
+        Args:
+            hand_pos: Hand position in camera space (meters)
+            
+        Returns:
+            Transformed position in scene space
+        """
+        # Flip Y axis (camera Y is down, scene Y is up)
+        scene_pos = hand_pos.copy()
+        scene_pos[1] = -hand_pos[1]
+        
+        # Adjust for better interaction (scale and offset)
+        # This maps hand movements to comfortable object positions
+        scene_pos[2] = scene_pos[2]  # Keep depth as-is
+        
+        return scene_pos
     
     def update(self, hands_data: Dict):
         """
@@ -163,12 +186,20 @@ class InteractionManager:
                 
                 if landmarks_3d is not None:
                     # Use index fingertip for pointing/selection
-                    hand_pos = landmarks_3d[8]  # Index fingertip
+                    hand_pos_camera = landmarks_3d[8]  # Index fingertip in camera space
+                    
+                    # Transform to scene coordinates
+                    hand_pos = self.transform_hand_to_scene(hand_pos_camera)
+                    
+                    # Transform all landmarks for visualization
+                    landmarks_3d_scene = np.array([
+                        self.transform_hand_to_scene(lm) for lm in landmarks_3d
+                    ])
                     
                     self.virtual_hands[hand_label] = {
                         'position': hand_pos,
                         'gesture': gesture,
-                        'landmarks_3d': landmarks_3d
+                        'landmarks_3d': landmarks_3d_scene
                     }
                     
                     # Handle interactions based on gesture
@@ -224,15 +255,27 @@ class InteractionManager:
         Handle two-hand gestures
         
         Args:
-            left_hand_pos: Left hand position
-            right_hand_pos: Right hand position
+            left_hand_pos: Left hand position (already in scene space)
+            right_hand_pos: Right hand position (already in scene space)
             gesture_type: Type of two-hand gesture
         """
-        if gesture_type == 'two_hand_scale' and self.selected_object is not None:
+        if gesture_type == 'two_hand_scale':
             # Scale object based on hand distance
             distance = np.linalg.norm(right_hand_pos - left_hand_pos)
-            self.selected_object.size = distance * 0.5
-            self.selected_object.size = np.clip(self.selected_object.size, 0.05, 0.3)
+            
+            # Select object between hands if none selected
+            if self.selected_object is None:
+                center = (left_hand_pos + right_hand_pos) / 2
+                for obj in self.objects:
+                    if obj.is_point_inside(center, tolerance=2.0):
+                        self.selected_object = obj
+                        obj.selected = True
+                        break
+            
+            # Scale selected object
+            if self.selected_object is not None:
+                self.selected_object.size = distance * 0.4
+                self.selected_object.size = np.clip(self.selected_object.size, 0.03, 0.25)
     
     def draw_scene(self):
         """Draw the 3D scene"""
